@@ -697,6 +697,10 @@ class PBFTHandler:
             else:
                 raise web.HTTPServiceUnavailable()
         else:
+
+            # print(request.headers)
+            # print(request.__dict__)
+
             json_data = await request.json()
 
 
@@ -920,12 +924,17 @@ class PBFTHandler:
                 transactions =  commit_decisions 
                 # proposal is the last proposal
                 # print(proposal['timestamp'])
-                timestamp = time.asctime( time.localtime( proposal['timestamp']) )           
+                try:
+                    timestamp = time.asctime( time.localtime( proposal['timestamp']) )
+                except Exception as e:
+                    self._log.error("received invalid timestamp. replacing with current timestamp")
+                    timestamp = time.asctime( time.localtime( time.time()) )
+                           
                 new_block=  Block(self._blockchain.length, commit_decisions, timestamp , self._blockchain.last_block_hash())
                 self._blockchain.add_block(new_block)
 
-                if self._index == 3:
-                    print(new_block.get_json())
+                # if self._index == 3:
+                #     print(new_block.get_json())
 
         except Exception as e:
             traceback.print_exc()
@@ -1290,7 +1299,7 @@ class PBFTHandler:
 
 
 
-def logging_config(log_level=logging.INFO, log_file=None):
+def logging_config(log_level=logging.ERROR, log_file=None):
     root_logger = logging.getLogger()
     if root_logger.hasHandlers():
         return

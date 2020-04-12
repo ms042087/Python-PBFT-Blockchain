@@ -1,47 +1,41 @@
+This is an extention to Practical-Byzantine-Fault-Tolerance-PBFT implementation by CyHsiung
+
+## ChangeLog
+ * Added a Blockchain implementation
+ * Replaced `MD5` hash with `SHA-256`
+ * Minor Bugfix
+ 
+ 
+
+
+
 A simple PBFT protocol over HTTP, using python3 asyncio/aiohttp. This is just a proof of concept implementation.
 
-## Configuration
-A `pbft.yaml` config file is needed for the nodes to run. A sample is as follows:
-```Yaml
-nodes:
-    - host: localhost
-      port: 30000
-    - host: localhost
-      port: 30001
-    - host: localhost
-      port: 30002
-    - host: localhost
-      port: 30003
+## Run the nodes and client
+Execute `run.sh` in a terminal. 
+Or
+Execute `run_node.sh` and `run_client.sh` in seperate terminals. 
 
-clients:
-    - host: localhost
-      port: 20001
-    - host: localhost
-      port: 20002
+## Send data to the blockchain network
+First execute `run_node.sh` to get the blockchain network running.
 
-loss%: 0
+Next run a single client insstances, to receive the responce from the blockchain network, through the command :
 
-ckpt_interval: 10
+'python client.py -id 0 -nm 0 &' 
 
-retry_times_before_view_change: 2
-
-sync_interval: 5
-
-misc:
-    network_timeout: 5
-```
-
-## Run the nodes
-`for i in {0..3}; do python ./node.py -i $i -lf False  &; done`
-
-## Send request to any one of the nodes
-e.g. `curl -vLX POST --data '{ 'id': (0, 0), 'client_url': http://localhost:20001/reply,
-    'timestamp': time.time(),'data': 'data_string'}' http://localhost:30000/request`
+Finally through thr following command  a nessagege can be sent to the blockchain network :
+`curl -vLX POST --data '{ "id":"(0, 0)",
+   "client_url":"http://localhost:20001/reply",
+   "timestamp":"timestamp",
+   "data":"data_string"}' http://localhost:30000/request`
+   
 The `id` here is a tuple of `(client_id, seq_id)`, `client_url` is the url for sending request to the get_reply function,
-`timestamp` is the current time, `data` is whatever data in string format, 
+`timestamp` is the current time, `data` is whatever data in string format. `http://localhost:30000/request` is the default address of the first node in the blockchain network.
 
-## Run the clients
-`for i in {0...2}; do python client.py -id $i -nm 5 &; done`
+Note that a new block is addes to the blockchain after `ckpt_interval (default = 10)` messages are received.
+
+## Configuration
+`pbft.yaml` config file defines the default values for the blockchain network. 
 
 ## Environment
 ```

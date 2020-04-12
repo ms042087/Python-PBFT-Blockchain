@@ -1,5 +1,5 @@
 #!/bin/sh
 for i in  0 1 
 do
-   python ./client.py -id $i -nm 20 & 
+   python ./client_app.py -id $i -nm 20 & 
 done

@@ -92,7 +92,7 @@ def arg_parse():
     # parse command line options
     parser = argparse.ArgumentParser(description='PBFT Node')
     parser.add_argument('-id', '--client_id', type=int, help='client id')
-    parser.add_argument('-nm', '--num_messages', default=10, type=int, help='number of message want to send for this client')
+    parser.add_argument('-nm', '--num_messages', default=0, type=int, help='number of message want to send for this client')
     parser.add_argument('-c', '--config', default='pbft.yaml', type=argparse.FileType('r'), help='use configuration [%(default)s]')
     args = parser.parse_args()
     return args
@@ -207,61 +207,127 @@ class Client:
             self._session = aiohttp.ClientSession(timeout = timeout)
          
         for i in range(self._num_messages):
-            
-            accumulate_failure = 0
-            is_sent = False
-            dest_ind = 0
-            self._is_request_succeed = asyncio.Event()
             # Every time succeed in sending message, wait for 0 - 1 second.
             await asyncio.sleep(random())
-            json_data = {
-                'id': (self._client_id, i),
-                'client_url': self._client_url + "/" + Client.REPLY,
-                'timestamp': time.time(),
-                'data': "data packet "+str(i)        
-            }
+            
+            await self.send_request( str(i), i)
+            
+            # accumulate_failure = 0
+            # is_sent = False
+            # dest_ind = 0
+            # self._is_request_succeed = asyncio.Event()
+            # # Every time succeed in sending message, wait for 0 - 1 second.
+            # await asyncio.sleep(random())
+            # json_data = {
+            #     'id': (self._client_id, i),
+            #     'client_url': self._client_url + "/" + Client.REPLY,
+            #     'timestamp': time.time(),
+            #     'data': "data packet "+str(i)        
+            # }
 
-            while 1:
-                try:
-                    self._status = Status(self._f)
-                    await self._session.post(make_url(self._nodes[dest_ind], Client.REQUEST), json=json_data)
+            # while 1:
+            #     try:
+            #         self._status = Status(self._f)
+            #         await self._session.post(make_url(self._nodes[dest_ind], Client.REQUEST), json=json_data)
 
-                    await asyncio.wait_for(self._is_request_succeed.wait(), self._resend_interval)
-                except:
+            #         await asyncio.wait_for(self._is_request_succeed.wait(), self._resend_interval)
+            #     except:
                     
-                    json_data['timestamp'] = time.time()
-                    self._status = Status(self._f)
-                    self._is_request_succeed.clear()
-                    self._log.info("--->client %d's message %d sent fail.", self._client_id, i)
+            #         json_data['timestamp'] = time.time()
+            #         self._status = Status(self._f)
+            #         self._is_request_succeed.clear()
+            #         self._log.info("--->client %d's message %d sent fail.", self._client_id, i)
 
-                    accumulate_failure += 1
-                    if accumulate_failure == self._retry_times:
-                        await self.request_view_change()
-                        # Sleep 0 - 1 second for view change
-                        await asyncio.sleep(random())
-                        accumulate_failure = 0
-                        dest_ind = (dest_ind + 1) % len(self._nodes)
-                else:
-                    self._log.info("--->client %d's  message %d sent successfully.", self._client_id, i)
-                    is_sent = True
-                if is_sent:
-                    break
+            #         accumulate_failure += 1
+            #         if accumulate_failure == self._retry_times:
+            #             await self.request_view_change()
+            #             # Sleep 0 - 1 second for view change
+            #             await asyncio.sleep(random())
+            #             accumulate_failure = 0
+            #             dest_ind = (dest_ind + 1) % len(self._nodes)
+            #     else:
+            #         self._log.info("--->client %d's  message %d sent successfully.", self._client_id, i)
+            #         is_sent = True
+            #     if is_sent:
+            #         break
         await self._session.close()
+
+
+    async def send_request(self, message, i=-1):
+        accumulate_failure = 0
+        is_sent = False
+        dest_ind = 0
+        self._is_request_succeed = asyncio.Event()
+        # Every time succeed in sending message, wait for 0 - 1 second.
+        # await asyncio.sleep(random())
+        json_data = {
+            'id': (self._client_id, i),
+            'client_url': self._client_url + "/" + Client.REPLY,
+            'timestamp': time.time(),
+            'data': "data packet "+str(message)        
+        }
+
+        while 1:
+            try:
+                self._status = Status(self._f)
+                await self._session.post(make_url(self._nodes[dest_ind], Client.REQUEST), json=json_data)
+                # print("request sent")
+
+                await asyncio.wait_for(self._is_request_succeed.wait(), self._resend_interval)
+            except:
+                
+                json_data['timestamp'] = time.time()
+                self._status = Status(self._f)
+                self._is_request_succeed.clear()
+                self._log.info("--->client %d's message %d sent fail.", self._client_id, i)
+
+                accumulate_failure += 1
+                if accumulate_failure == self._retry_times:
+                    await self.request_view_change()
+                    # Sleep 0 - 1 second for view change
+                    await asyncio.sleep(random())
+                    accumulate_failure = 0
+                    dest_ind = (dest_ind + 1) % len(self._nodes)
+            else:
+                self._log.info("--->client %d's  message %d sent successfully.", self._client_id, i)
+                is_sent = True
+            if is_sent:
+                break
+
     
 
-def main():
+def setup(args = None):
     logging_config()
     log = logging.getLogger()
-    args = arg_parse()
+    if args == None:
+        class Args:
+            def __init__(self):
+                self.client_id      = 0
+                self.num_messages   = 0
+                self.config         = open('pbft.yaml', 'r')
+        args = Args()
+       
+
     conf = conf_parse(args.config)
     log.debug(conf)
-
-    addr = conf['clients'][args.client_id]
-    log.info("begin")
+    try:
+        addr = conf['clients'][args.client_id]
+    except Exception as e:
+        import pdb; pdb.set_trace()
     
+
+
+    log.info("begin")
+
 
     client = Client(conf, args, log)
 
+    
+
+    return client
+
+def run_app(client):
+    
     addr = client._address
     host = addr['host']
     port = addr['port']
@@ -277,12 +343,44 @@ def main():
     web.run_app(app, host=host, port=port, access_log=None)
 
 
-    
-    # loop = asyncio.get_event_loop()
-    # loop.run_until_complete(client.request())
 
-if __name__ == "__main__":
-    main()
+# def main():
+#     # logging_config()
+#     # log = logging.getLogger()
+#     # args = arg_parse()
+#     # conf = conf_parse(args.config)
+#     # log.debug(conf)
+
+#     # addr = conf['clients'][args.client_id]
+#     # log.info("begin")
+    
+
+
+
+
+#     # client = Client(conf, args, log)
+
+#     # addr = client._address
+#     # host = addr['host']
+#     # port = addr['port']
+
+
+#     # asyncio.ensure_future(client.request())
+
+#     # app = web.Application()
+#     # app.add_routes([
+#     #     web.post('/' + Client.REPLY, client.get_reply),
+#     # ])
+
+#     # web.run_app(app, host=host, port=port, access_log=None)
+#     args = arg_parse()
+#     setup(args)
+    
+#     # loop = asyncio.get_event_loop()
+#     # loop.run_until_complete(client.request())
+
+# if __name__ == "__main__":
+#     main()
 
             
     
