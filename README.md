@@ -24,6 +24,7 @@ Next run a single client insstances, to receive the responce from the blockchain
 'python client.py -id 0 -nm 0 &' 
 
 Finally through thr following command  a nessagege can be sent to the blockchain network :
+
 `curl -vLX POST --data '{ "id":"(0, 0)",
    "client_url":"http://localhost:20001/reply",
    "timestamp":"timestamp",
