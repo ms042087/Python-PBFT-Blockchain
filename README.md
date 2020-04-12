@@ -21,14 +21,16 @@ First execute `run_node.sh` to get the blockchain network running.
 
 Next run a single client insstances, to receive the responce from the blockchain network, through the command :
 
-'python client.py -id 0 -nm 0 &' 
+`python client.py -id 0 -nm 0 &` 
 
 Finally through thr following command  a nessagege can be sent to the blockchain network :
 
-`curl -vLX POST --data '{ "id":"(0, 0)",
+```
+curl -vLX POST --data '{ "id":"(0, 0)",
    "client_url":"http://localhost:20001/reply",
    "timestamp":"timestamp",
-   "data":"data_string"}' http://localhost:30000/request`
+   "data":"data_string"}' http://localhost:30000/request
+ ```
    
 The `id` here is a tuple of `(client_id, seq_id)`, `client_url` is the url for sending request to the get_reply function,
 `timestamp` is the current time, `data` is whatever data in string format. `http://localhost:30000/request` is the default address of the first node in the blockchain network.
