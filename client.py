@@ -9,6 +9,7 @@ import aiohttp
 from aiohttp import web
 from random import random
 import hashlib
+import traceback
 
 
 
@@ -121,7 +122,7 @@ def conf_parse(conf_file) -> dict:
     misc:
         network_timeout: 10
     '''
-    conf = yaml.load(conf_file)
+    conf = yaml.safe_load(conf_file)
     return conf
 
 def make_url(node, command):
@@ -217,7 +218,7 @@ class Client:
                 'id': (self._client_id, i),
                 'client_url': self._client_url + "/" + Client.REPLY,
                 'timestamp': time.time(),
-                'data': str(i)        
+                'data': "data packet "+str(i)        
             }
 
             while 1:
@@ -231,7 +232,7 @@ class Client:
                     json_data['timestamp'] = time.time()
                     self._status = Status(self._f)
                     self._is_request_succeed.clear()
-                    self._log.info("---> %d message %d sent fail.", self._client_id, i)
+                    self._log.info("--->client %d's message %d sent fail.", self._client_id, i)
 
                     accumulate_failure += 1
                     if accumulate_failure == self._retry_times:
@@ -241,7 +242,7 @@ class Client:
                         accumulate_failure = 0
                         dest_ind = (dest_ind + 1) % len(self._nodes)
                 else:
-                    self._log.info("---> %d message %d sent successfully.", self._client_id, i)
+                    self._log.info("--->client %d's  message %d sent successfully.", self._client_id, i)
                     is_sent = True
                 if is_sent:
                     break

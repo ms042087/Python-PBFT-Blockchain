@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-import logging
+import logging, traceback
 import argparse
 import yaml
 import time
@@ -119,7 +119,7 @@ class Status:
         # preposals from BFT nodes. Need sort key in json.dumps to make 
         # sure getting the same string. Use hashlib so that we got same 
         # hash everytime.
-        hash_object = hashlib.md5(json.dumps(proposal, sort_keys=True).encode())
+        hash_object = hashlib.sha256(json.dumps(proposal, sort_keys=True).encode())
         key = (view.get_view(), hash_object.digest())
         if msg_type == Status.PREPARE:
             if key not in self.prepare_msgs:
@@ -171,7 +171,7 @@ class CheckPoint:
         self.next_slot = 0
         # Globally accepted checkpoint
         self.checkpoint = []
-        # Use the hash of the checkpoint to record receive vates for given ckpt.
+        # Use the hash of the checkpoint to record receive votes for given ckpt.
         self._received_votes_by_ckpt = {} 
         self._session = None
         self._network_timeout = network_timeout
@@ -200,7 +200,7 @@ class CheckPoint:
             The hash of the input checkpoint in the format of 
             binary string.
         '''
-        hash_object = hashlib.md5(json.dumps(ckpt, sort_keys=True).encode())
+        hash_object = hashlib.sha256(json.dumps(ckpt, sort_keys=True).encode())
         return hash_object.digest()  
 
 
@@ -235,6 +235,7 @@ class CheckPoint:
                 self._log.info("---> %d: Update checkpoint by receiving votes", self._node_index)
                 self.next_slot = self._received_votes_by_ckpt[hash_ckpt].next_slot
                 self.checkpoint = self._received_votes_by_ckpt[hash_ckpt].checkpoint
+               
 
 
     async def propose_vote(self, commit_decisions):
@@ -414,6 +415,79 @@ class ViewChangeVotes:
         self.from_nodes.add(json_data['node_index'])
 
 
+
+
+
+class Block:
+    def __init__(self, index, transactions, timestamp, previous_hash):
+        self.index          = index
+        self.transactions   = transactions
+        self.timestamp      = timestamp
+        self.previous_hash  = previous_hash
+
+    def compute_hash(self):
+        """
+        A function that return the hash of the block contents.
+        """
+        block_string = json.dumps(self.__dict__, sort_keys=True)
+        return hashlib.sha256(block_string.encode()).hexdigest()
+    def get_json(self):
+        return json.dumps(self.__dict__, sort_keys=True)
+
+
+class Blockchain:
+    
+
+    def __init__(self):
+        self.commit_counter = 0
+        self.length = 0
+        self.chain = []
+        self.create_genesis_block()
+
+    def create_genesis_block(self):
+        """
+        A function to generate genesis block and appends it to
+        the chain. The block has index 0, previous_hash as 0, and
+        a valid hash.
+        """
+        genesis_block = Block(0, ["Genenesis Block"], 0, "0")
+        genesis_block.hash = genesis_block.compute_hash()
+        self.length += 1
+        self.chain.append(genesis_block)
+
+    # @property
+    def last_block(self):
+        return self.chain[-1]
+
+    def last_block_hash(self):
+        return self.chain[-1].compute_hash()
+
+    def update_commit_counter(self):
+        self.commit_counter += 1
+
+    def add_block(self, block):
+        """
+        A function that adds the block to the chain after verification.
+        Verification includes:
+        * The previous_hash referred in the block and the hash of latest block
+          in the chain match.
+        """
+        previous_hash = self.last_block_hash()
+
+        if previous_hash != block.previous_hash:
+            raise Exception('block.previous_hash not equal to last_block_hash')
+            print('block.previous_hash not equal to last_block_hash')
+            return
+        else:
+            print(str(previous_hash)+' == '+str(block.previous_hash))
+
+
+        block.hash = block.compute_hash()
+        self.length += 1
+        self.chain.append(block)
+
+
+
 class PBFTHandler:
     REQUEST = 'request'
     PREPREPARE = 'preprepare'
@@ -439,6 +513,9 @@ class PBFTHandler:
         # leader
         self._view = View(0, self._node_cnt)
         self._next_propose_slot = 0
+        self._blockchain =  Blockchain()
+
+        self.committed_to_blockchain = False
 
         # TODO: Test fixed
         if self._index == 0:
@@ -601,8 +678,6 @@ class PBFTHandler:
         
         await self._post(self._nodes, PBFTHandler.PREPARE, preprepare_msg)
 
-
-
     async def get_request(self, request):
         '''
         Handle the request from client if leader, otherwise 
@@ -618,6 +693,11 @@ class PBFTHandler:
                 raise web.HTTPServiceUnavailable()
         else:
             json_data = await request.json()
+
+
+            # print("\t\t--->node"+str(self._index)+": on request :")
+            # print(json_data)
+
             await self.preprepare(json_data)
             return web.Response()
 
@@ -686,6 +766,8 @@ class PBFTHandler:
         self._log.info("---> %d: receive prepare msg from %d", 
             self._index, json_data['index'])
 
+        # print("\t--->node "+str(self._index)+": receive prepare msg from node "+str(json_data['index']))
+        # print(json_data)
 
         if json_data['view'] < self._follow_view.get_view():
             # when receive message with view < follow_view, do nothing
@@ -740,6 +822,7 @@ class PBFTHandler:
         
         json_data = await request.json()
         self._log.info("---> %d: on reply", self._index)
+        # print("\t--->node "+str(self._index)+": on reply ")
 
         if json_data['view'] < self._follow_view.get_view():
             # when receive message with view < follow_view, do nothing
@@ -815,20 +898,59 @@ class PBFTHandler:
 
         '''
         commit_decisions = []
+        # print(self._ckpt.next_slot, self._last_commit_slot + 1)
         for i in range(self._ckpt.next_slot, self._last_commit_slot + 1):
             status = self._status_by_slot[str(i)]
-            proposal = status.commit_certificate._proposal
+            proposal = status.commit_certificate._proposal 
+
             commit_decisions.append((proposal['id'], proposal['data']))
 
+        try:
+            if not self.committed_to_blockchain and len(commit_decisions) == self._checkpoint_interval:
+                self.committed_to_blockchain = True
+                latest_proposal = proposal
+                transactions =  commit_decisions                                                                     #{ "client_url": proposal['client_url'], "data": proposal['data'] }            
+                new_block=  Block(self._blockchain.length, commit_decisions, latest_proposal['timestamp'], self._blockchain.last_block_hash())
+                self._blockchain.add_block(new_block)
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+
+        
+        # print(len(self._status_by_slot))
+        # print(self._ckpt.next_slot, self._last_commit_slot + 1)
+        # print(len(commit_decisions))
+        # # print()
+        # print()
+        # print('commit_decisions')
+        # print(commit_decisions)
         return commit_decisions
 
     async def _commit_action(self):
         '''
         Dump the current commit decisions to disk.
         '''
-        with open("{}.dump".format(self._index), 'w') as f:
-            dump_data = self._ckpt.checkpoint + self.get_commit_decisions()
+        with open("~$node_{}_blockchain.dump".format(self._index), 'w') as f:
+            dump_data = self._ckpt.checkpoint + self.get_commit_decisions()            
             json.dump(dump_data, f)
+        # try:
+            with open("~$node_{}.blockchain".format(self._index), 'a') as f:
+                # f.write(str(dump_data)+'\n\n------------\n\n')
+                # print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
+                for i in range(self._blockchain.commit_counter, self._blockchain.length):
+                    f.write(str(self._blockchain.chain[i].get_json())+'\n------------\n')
+                    self._blockchain.update_commit_counter()
+        # except Exception as e:
+        #     traceback.print_exc()
+        #     print('for i = ' +str(i))
+        #     print(e)
+
+        # pad = ''
+        # for k in range(self._index): 
+        #     pad += '\t'
+        # print(pad+'node :' + str(self._index) +' : '+str(self._blockchain.length))
+
+        
 
     async def receive_ckpt_vote(self, request):
         '''
@@ -836,6 +958,17 @@ class PBFTHandler:
         '''
         self._log.info("---> %d: receive checkpoint vote.", self._index)
         json_data = await request.json()
+
+        # print ()
+        # print ()
+        # print ('json_data')
+        # print(json_data)
+        # print ()
+        # print ()
+        # # print ('ckpt')
+        # # print (ckpt)
+        # print ()
+
         await self._ckpt.receive_vote(json_data)
         return web.Response()
 
@@ -852,8 +985,33 @@ class PBFTHandler:
                     (Elements are commit_certificate.to_dict())
             }
         '''
+
+        
+
+
+
+
         self._log.info("---> %d: on receive sync stage.", self._index)
         json_data = await request.json()
+
+
+        try:
+            print(len(self._status_by_slot))
+            print(self._ckpt.next_slot, self._last_commit_slot + 1)
+            print(len(json_data['checkpoint']))
+            print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
+            print()
+            print()
+            self.committed_to_blockchain = False
+        except Exception as e:
+            traceback.print_exc()
+            print('for i = ' +str(i))
+            print(e)
+
+
+
+
+
         self._ckpt.update_checkpoint(json_data['checkpoint'])
         self._last_commit_slot = max(self._last_commit_slot, self._ckpt.next_slot - 1)
         # TODO: Only check bubble instead of all slots between lowerbound
@@ -995,9 +1153,6 @@ class PBFTHandler:
 
         return web.Response()
 
-
-
-
     async def receive_view_change_vote(self, request):
         '''
         Receive the vote message for view change. (1) Update the checkpoint 
@@ -1134,12 +1289,22 @@ def logging_config(log_level=logging.INFO, log_file=None):
         h.setLevel(log_level)
         root_logger.addHandler(h)
 
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def arg_parse():
     # parse command line options
     parser = argparse.ArgumentParser(description='PBFT Node')
     parser.add_argument('-i', '--index', type=int, help='node index')
     parser.add_argument('-c', '--config', default='pbft.yaml', type=argparse.FileType('r'), help='use configuration [%(default)s]')
-    parser.add_argument('-lf', '--log_to_file', default=False, type=bool, help='Whether to dump log messages to file, default = False')
+    parser.add_argument('-lf', '--log_to_file', default=False, type=str2bool, help='Whether to dump log messages to file, default = False')    
     args = parser.parse_args()
     return args
 
@@ -1172,13 +1337,13 @@ def conf_parse(conf_file) -> dict:
     misc:
         network_timeout: 5
     '''
-    conf = yaml.load(conf_file)
+    conf = yaml.safe_load(conf_file)
     return conf
 
 def main():
     args = arg_parse()
     if args.log_to_file:
-        logging.basicConfig(filename='log_' + str(args.index),
+        logging.basicConfig(filename='~$node_' + str(args.index)+'.log',
                             filemode='a', level=logging.DEBUG)
     logging_config()
     log = logging.getLogger()
