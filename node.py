@@ -415,14 +415,12 @@ class ViewChangeVotes:
         self.from_nodes.add(json_data['node_index'])
 
 
-
-
-
 class Block:
     def __init__(self, index, transactions, timestamp, previous_hash):
         self.index          = index
         self.transactions   = transactions
         self.timestamp      = timestamp
+        self.hash           = ''
         self.previous_hash  = previous_hash
 
     def compute_hash(self):
@@ -432,7 +430,7 @@ class Block:
         block_string = json.dumps(self.__dict__, sort_keys=True)
         return hashlib.sha256(block_string.encode()).hexdigest()
     def get_json(self):
-        return json.dumps(self.__dict__, sort_keys=True)
+        return json.dumps(self.__dict__ , indent=4, sort_keys=True)
 
 
 class Blockchain:
@@ -460,7 +458,11 @@ class Blockchain:
         return self.chain[-1]
 
     def last_block_hash(self):
-        return self.chain[-1].compute_hash()
+        tail = self.chain[-1]
+
+        # print(tail.transactions)
+
+        return tail.hash
 
     def update_commit_counter(self):
         self.commit_counter += 1
@@ -476,13 +478,14 @@ class Blockchain:
 
         if previous_hash != block.previous_hash:
             raise Exception('block.previous_hash not equal to last_block_hash')
-            print('block.previous_hash not equal to last_block_hash')
+            # print('block.previous_hash not equal to last_block_hash')
             return
-        else:
-            print(str(previous_hash)+' == '+str(block.previous_hash))
+        # else:
+        #     print(str(previous_hash)+' == '+str(block.previous_hash))
 
 
         block.hash = block.compute_hash()
+        # print( 'New Hash : '+str(block.hash)+'\n\n')
         self.length += 1
         self.chain.append(block)
 
@@ -513,8 +516,10 @@ class PBFTHandler:
         # leader
         self._view = View(0, self._node_cnt)
         self._next_propose_slot = 0
+
         self._blockchain =  Blockchain()
 
+        # tracks if commit_decisions had been commited to blockchain
         self.committed_to_blockchain = False
 
         # TODO: Test fixed
@@ -903,15 +908,25 @@ class PBFTHandler:
             status = self._status_by_slot[str(i)]
             proposal = status.commit_certificate._proposal 
 
-            commit_decisions.append((proposal['id'], proposal['data']))
+            commit_decisions.append((str(proposal['id']), proposal['data']))
 
         try:
+            # if self._index == 3:
+                # print('Node 3 is leader : ', str(self._is_leader))
+            # print('Node '+str(self._index)+' is leader : ', str(self._is_leader))
+            
             if not self.committed_to_blockchain and len(commit_decisions) == self._checkpoint_interval:
                 self.committed_to_blockchain = True
-                latest_proposal = proposal
-                transactions =  commit_decisions                                                                     #{ "client_url": proposal['client_url'], "data": proposal['data'] }            
-                new_block=  Block(self._blockchain.length, commit_decisions, latest_proposal['timestamp'], self._blockchain.last_block_hash())
+                transactions =  commit_decisions 
+                # proposal is the last proposal
+                # print(proposal['timestamp'])
+                timestamp = time.asctime( time.localtime( proposal['timestamp']) )           
+                new_block=  Block(self._blockchain.length, commit_decisions, timestamp , self._blockchain.last_block_hash())
                 self._blockchain.add_block(new_block)
+
+                if self._index == 3:
+                    print(new_block.get_json())
+
         except Exception as e:
             traceback.print_exc()
             print(e)
@@ -930,16 +945,16 @@ class PBFTHandler:
         '''
         Dump the current commit decisions to disk.
         '''
-        with open("~$node_{}_blockchain.dump".format(self._index), 'w') as f:
-            dump_data = self._ckpt.checkpoint + self.get_commit_decisions()            
-            json.dump(dump_data, f)
+        # with open("~$node_{}_blockchain.dump".format(self._index), 'w') as f:
+        dump_data = self._ckpt.checkpoint + self.get_commit_decisions()            
+            # json.dump(dump_data, f)
         # try:
-            with open("~$node_{}.blockchain".format(self._index), 'a') as f:
-                # f.write(str(dump_data)+'\n\n------------\n\n')
-                # print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
-                for i in range(self._blockchain.commit_counter, self._blockchain.length):
-                    f.write(str(self._blockchain.chain[i].get_json())+'\n------------\n')
-                    self._blockchain.update_commit_counter()
+        with open("~$node_{}.blockchain".format(self._index), 'a') as f:
+            # f.write(str(dump_data)+'\n\n------------\n\n')
+            # print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
+            for i in range(self._blockchain.commit_counter, self._blockchain.length):
+                f.write(str(self._blockchain.chain[i].get_json())+'\n------------\n')
+                self._blockchain.update_commit_counter()
         # except Exception as e:
         #     traceback.print_exc()
         #     print('for i = ' +str(i))
@@ -996,12 +1011,12 @@ class PBFTHandler:
 
 
         try:
-            print(len(self._status_by_slot))
-            print(self._ckpt.next_slot, self._last_commit_slot + 1)
-            print(len(json_data['checkpoint']))
-            print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
-            print()
-            print()
+            # print(len(self._status_by_slot))
+            # print(self._ckpt.next_slot, self._last_commit_slot + 1)
+            # # print(len(json_data['checkpoint']))
+            # print('node :' + str(self._index) +' > '+str(self._blockchain.commit_counter)+' : '+str(self._blockchain.length))
+            # print()
+            # print()
             self.committed_to_blockchain = False
         except Exception as e:
             traceback.print_exc()
@@ -1267,6 +1282,13 @@ class PBFTHandler:
         await self._ckpt.garbage_collection()
 
 
+    async def show_blockchain(request):
+        name = request.match_info.get( "Anonymous")
+        text = "show blockchain here " 
+        print('Node '+str(self._index)+' anything')
+        return web.Response(text=text)
+
+
 
 def logging_config(log_level=logging.INFO, log_file=None):
     root_logger = logging.getLogger()
@@ -1340,6 +1362,17 @@ def conf_parse(conf_file) -> dict:
     conf = yaml.safe_load(conf_file)
     return conf
 
+
+    
+
+    
+
+
+
+
+
+
+
 def main():
     args = arg_parse()
     if args.log_to_file:
@@ -1370,7 +1403,11 @@ def main():
         web.post('/' + PBFTHandler.RECEIVE_SYNC, pbft.receive_sync),
         web.post('/' + PBFTHandler.VIEW_CHANGE_REQUEST, pbft.get_view_change_request),
         web.post('/' + PBFTHandler.VIEW_CHANGE_VOTE, pbft.receive_view_change_vote),
+        web.get('/'+'blockchain', pbft.show_blockchain),
         ])
+
+
+
 
     web.run_app(app, host=host, port=port, access_log=None)
 
