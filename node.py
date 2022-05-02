@@ -27,7 +27,7 @@ class View:
 
     # To encode to json
     def get_view(self):
-        return self._view_number 
+        return self._view_number
 
     # Recover from json data.
     def set_view(self, view):
@@ -115,9 +115,9 @@ class Status:
             from_node: The node send given the message.
         '''
 
-        # The key need to include hash(proposal) in case get different 
-        # preposals from BFT nodes. Need sort key in json.dumps to make 
-        # sure getting the same string. Use hashlib so that we got same 
+        # The key need to include hash(proposal) in case get different
+        # preposals from BFT nodes. Need sort key in json.dumps to make
+        # sure getting the same string. Use hashlib so that we got same
         # hash everytime.
         hash_object = hashlib.sha256(json.dumps(proposal, sort_keys=True).encode())
         key = (view.get_view(), hash_object.digest())
@@ -492,6 +492,7 @@ class Blockchain:
 
 
 class PBFTHandler:
+    # Five States in PBFT
     REQUEST = 'request'
     PREPREPARE = 'preprepare'
     PREPARE = 'prepare'
@@ -511,7 +512,7 @@ class PBFTHandler:
         self._node_cnt = len(self._nodes)
         self._index = index
         # Number of faults tolerant.
-        self._f = (self._node_cnt - 1) // 3
+        self._f = (self._node_cnt - 1) // 3 # Node = 3f+1 -> f= (node-1)/3
 
         # leader
         self._view = View(0, self._node_cnt)
@@ -528,7 +529,7 @@ class PBFTHandler:
         else:
             self._is_leader = False
 
-        # Network simulation
+        # Network simulationconf
         self._loss_rate = conf['loss%'] / 100
 
         # Time configuration

@@ -140,7 +140,7 @@ class Client:
         self._num_messages = args.num_messages
         self._session = None
         self._address = conf['clients'][self._client_id]
-        self._client_url = "http://{}:{}".format(self._address['host'], 
+        self._client_url = "http://{}:{}".format(self._address['host'],
             self._address['port'])
         self._log = log
 
@@ -153,6 +153,7 @@ class Client:
         # To record the status of current request
         self._status = None
 
+    # Function 1) Request View Change
     async def request_view_change(self):
         json_data = {
             "action" : "view change"
@@ -169,7 +170,7 @@ class Client:
                     self._client_id, i)
 
 
-
+    # Function 2) Get Reply
     async def get_reply(self, request):
         '''
         Count the number of valid reply messages and decide whether request succeed:
@@ -200,18 +201,18 @@ class Client:
 
         return web.Response()
 
-
+    # Function 3) Request
     async def request(self):
         if not self._session:
             timeout = aiohttp.ClientTimeout(self._resend_interval)
             self._session = aiohttp.ClientSession(timeout = timeout)
-         
+
         for i in range(self._num_messages):
             # Every time succeed in sending message, wait for 0 - 1 second.
             await asyncio.sleep(random())
-            
+
             await self.send_request( str(i), i)
-            
+
             # accumulate_failure = 0
             # is_sent = False
             # dest_ind = 0
@@ -252,7 +253,7 @@ class Client:
             #         break
         await self._session.close()
 
-
+    # Function 4) Send Request
     async def send_request(self, message, i=-1):
         accumulate_failure = 0
         is_sent = False
@@ -264,7 +265,7 @@ class Client:
             'id': (self._client_id, i),
             'client_url': self._client_url + "/" + Client.REPLY,
             'timestamp': time.time(),
-            'data': "data packet "+str(message)        
+            'data': "data packet "+str(message)
         }
 
         while 1:
@@ -294,11 +295,13 @@ class Client:
             if is_sent:
                 break
 
-    
 
+# Entry Point
 def setup(args = None):
+    # Step 1) Setup Logger
     logging_config()
     log = logging.getLogger()
+    # Step 2) Load config file
     if args == None:
         class Args:
             def __init__(self):
@@ -306,28 +309,19 @@ def setup(args = None):
                 self.num_messages   = 0
                 self.config         = open('pbft.yaml', 'r')
         args = Args()
-       
-
     conf = conf_parse(args.config)
     log.debug(conf)
     try:
         addr = conf['clients'][args.client_id]
     except Exception as e:
         import pdb; pdb.set_trace()
-    
-
-
     log.info("begin")
-
-
+    # Step 3) Run client
     client = Client(conf, args, log)
-
-    
-
     return client
 
 def run_app(client):
-    
+
     addr = client._address
     host = addr['host']
     port = addr['port']
